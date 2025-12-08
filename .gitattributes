@@ -1,0 +1,21 @@
+# Git attributes для проекта
+
+# Текстовые файлы
+*.py text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.txt text eol=lf
+*.sh text eol=lf
+*.tact text eol=lf
+
+# Бинарные файлы
+*.boc binary
+*.b64 binary
+
+# Документация и конфиги
+*.md text
+*.json text
+*.yml text
+

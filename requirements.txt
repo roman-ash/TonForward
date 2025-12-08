@@ -1,0 +1,10 @@
+Django>=3.0,<4.0
+djangorestframework
+djangorestframework-simplejwt
+redis
+requests
+celery[redis]
+django_celery_beat
+psycopg2-binary>=2.8
+httpx>=0.24.0
+tonsdk
