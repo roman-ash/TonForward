@@ -34,10 +34,6 @@ class User(AbstractBaseUser):
         #     ("update_documents", "Can update documents"),
         #     ("delete_documents", "Can delete documents"),
         # )
-        #superuser roman 1111
-
-        # db psql -U postgres_user buyer
-        #\q
 
     def get_full_name(self) -> str:
         """Возвращает полное имя пользователя."""
