@@ -86,3 +86,9 @@ desktop.ini
 *.bak
 *.backup
 *~
+/contracts/Deal_simple.tact_Deal.abi
+/contracts/Deal_simple.tact_Deal.fc
+/contracts/Deal_simple.tact_Deal.fif
+/contracts/Deal_simple.tact_Deal.md
+/contracts/Deal_simple.tact_Deal.pkg
+/contracts/Deal_simple.tact_Deal.ts

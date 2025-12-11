@@ -25,10 +25,11 @@ class DealOnchainParams:
     buyer_address: str  # TON address байера
     service_wallet: str  # TON address сервисного кошелька
     arbiter_wallet: str  # TON address арбитра
-    item_price_nano: int  # Цена товара в nanoTON
-    buyer_fee_nano: int  # Комиссия байера в nanoTON
-    service_fee_nano: int  # Комиссия сервиса в nanoTON
-    insurance_nano: int  # Страховка в nanoTON
+    item_price_nano: int  # Максимальная цена товара в nanoTON (для escrow)
+    buyer_fee_nano: int  # Вознаграждение байера в nanoTON
+    shipping_budget_nano: int  # Бюджет на доставку в nanoTON (для escrow)
+    service_fee_nano: int  # Комиссия сервиса в nanoTON (НЕ в escrow, остается у сервиса)
+    insurance_nano: int  # Страховка в nanoTON (НЕ в escrow, остается у сервиса)
     purchase_deadline_ts: int  # Unix timestamp дедлайна покупки
     ship_deadline_ts: int  # Unix timestamp дедлайна отправки
     confirm_deadline_ts: int  # Unix timestamp дедлайна подтверждения
@@ -143,6 +144,7 @@ def deploy_onchain_deal(params: DealOnchainParams) -> str:
             'arbiter_wallet': params.arbiter_wallet,
             'item_price_ton': convert_nano_to_ton(params.item_price_nano),
             'buyer_fee_ton': convert_nano_to_ton(params.buyer_fee_nano),
+            'shipping_budget_ton': convert_nano_to_ton(params.shipping_budget_nano),
             'service_fee_ton': convert_nano_to_ton(params.service_fee_nano),
             'insurance_ton': convert_nano_to_ton(params.insurance_nano),
             'purchase_deadline_ts': params.purchase_deadline_ts,
@@ -154,23 +156,44 @@ def deploy_onchain_deal(params: DealOnchainParams) -> str:
         init_data_cell = build_deal_init_data_cell(init_params)
         
         # Вычисляем общую сумму для escrow
+        # Escrow должен покрывать максимальную выплату байеру:
+        # buyer_payout = actual_item_price + actual_shipping_cost + buyer_reward
+        # Максимум = item_price_max + shipping_budget + buyer_reward
+        # Service_fee и insurance НЕ входят в escrow (остаются у сервиса)
         total_amount_ton = (
             convert_nano_to_ton(params.item_price_nano) +
-            convert_nano_to_ton(params.buyer_fee_nano) +
-            convert_nano_to_ton(params.service_fee_nano) +
-            convert_nano_to_ton(params.insurance_nano)
+            convert_nano_to_ton(params.shipping_budget_nano) +
+            convert_nano_to_ton(params.buyer_fee_nano)
         )
         
         # Деплоим контракт
-        logger.info(f"Deploying contract with escrow amount: {total_amount_ton} TON")
+        # Для деплоя отправляем минимальную сумму (~0.1 TON), основную сумму escrow отправляем после
+        deploy_amount_ton = Decimal('0.1')  # Минимальная сумма для деплоя (газ + комиссии)
+        
+        logger.info(f"Deploying contract (initial deploy: {deploy_amount_ton} TON, escrow will be {total_amount_ton} TON)")
         contract_address = wallet_service.deploy_contract(
             code_cell=code_cell,
             init_data_cell=init_data_cell,
-            amount_ton=total_amount_ton,
+            amount_ton=deploy_amount_ton,  # Используем минимальную сумму для деплоя
             comment=f"Deploy Deal contract for deal"
         )
         
         logger.info(f"Contract deployed successfully: {contract_address}")
+        
+        # После успешного деплоя отправляем основную сумму escrow
+        if total_amount_ton > deploy_amount_ton:
+            escrow_amount = total_amount_ton - deploy_amount_ton
+            logger.info(f"Sending escrow amount {escrow_amount} TON to deployed contract")
+            try:
+                wallet_service.send_transfer(
+                    to_address=contract_address,
+                    amount_ton=escrow_amount,
+                    comment="Escrow for Deal contract"
+                )
+                logger.info(f"Escrow amount sent successfully")
+            except Exception as e:
+                logger.warning(f"Failed to send escrow amount: {e}. Contract is deployed, but escrow needs to be sent manually.")
+        
         return contract_address
         
     except Exception as e:

@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TON Deal Contract Deploy Test</title>
+    <script src="https://unpkg.com/@tonconnect/ui@latest/dist/tonconnect-ui.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        .container {
+            background: #2a2a2a;
+            padding: 20px;
+            border-radius: 10px;
+        }
+        button {
+            background: #0088cc;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0066aa;
+        }
+        button:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
+        .status {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 5px;
+            background: #333;
+        }
+        .success { background: #2a5a2a; }
+        .error { background: #5a2a2a; }
+        .info { background: #2a2a5a; }
+        code {
+            background: #1a1a1a;
+            padding: 2px 5px;
+            border-radius: 3px;
+            font-size: 12px;
+            word-break: break-all;
+        }
+        textarea {
+            width: 100%;
+            height: 100px;
+            background: #1a1a1a;
+            color: #fff;
+            border: 1px solid #555;
+            border-radius: 5px;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 TON Deal Contract Deploy Test</h1>
+        
+        <div id="tonconnect-status" class="status info">
+            TonConnect не подключен. Нажмите "Connect Wallet" для начала.
+        </div>
+        
+        <button id="connect-btn">Connect Wallet</button>
+        <button id="disconnect-btn" disabled>Disconnect</button>
+        
+        <h2>Contract Parameters</h2>
+        <p>
+            <label>Contract Code (base64):</label><br>
+            <textarea id="code-b64" placeholder="Вставьте DEAL_CONTRACT_CODE_B64 из .env"></textarea>
+        </p>
+        
+        <p>
+            <label>Contract Address (будет вычислен автоматически):</label><br>
+            <code id="contract-address">-</code>
+        </p>
+        
+        <button id="calculate-address-btn">Calculate Contract Address</button>
+        <button id="deploy-btn" disabled>Deploy Contract</button>
+        
+        <div id="result" class="status info" style="display:none;"></div>
+    </div>
+
+    <script type="module">
+        let tonConnectUI;
+        let wallet = null;
+        
+        // Инициализация TonConnect UI
+        tonConnectUI = new TON_CONNECT_UI.TonConnectUI({
+            manifestUrl: window.location.origin + '/tonconnect-manifest.json'
+        });
+        
+        // Проверка статуса подключения
+        tonConnectUI.connectionState.subscribe(state => {
+            if (state) {
+                wallet = state.account;
+                updateStatus('success', `Подключен: ${wallet.address}`);
+                document.getElementById('connect-btn').disabled = true;
+                document.getElementById('disconnect-btn').disabled = false;
+                document.getElementById('deploy-btn').disabled = false;
+            } else {
+                wallet = null;
+                updateStatus('info', 'TonConnect не подключен');
+                document.getElementById('connect-btn').disabled = false;
+                document.getElementById('disconnect-btn').disabled = true;
+                document.getElementById('deploy-btn').disabled = true;
+            }
+        });
+        
+        // Кнопка подключения
+        document.getElementById('connect-btn').addEventListener('click', () => {
+            tonConnectUI.openModal();
+        });
+        
+        // Кнопка отключения
+        document.getElementById('disconnect-btn').addEventListener('click', () => {
+            tonConnectUI.disconnect();
+        });
+        
+        // Вычисление адреса контракта
+        document.getElementById('calculate-address-btn').addEventListener('click', async () => {
+            const codeB64 = document.getElementById('code-b64').value.trim();
+            if (!codeB64) {
+                updateStatus('error', 'Введите код контракта');
+                return;
+            }
+            
+            updateStatus('info', 'Вычисление адреса контракта...');
+            
+            // Для полного вычисления нужны code и init_data
+            // Здесь показываем только пример
+            updateStatus('info', 'Для полного вычисления адреса нужны code и init_data. Используйте Python скрипт для этого.');
+        });
+        
+        // Деплой контракта
+        document.getElementById('deploy-btn').addEventListener('click', async () => {
+            if (!wallet) {
+                updateStatus('error', 'Подключите кошелек');
+                return;
+            }
+            
+            const codeB64 = document.getElementById('code-b64').value.trim();
+            if (!codeB64) {
+                updateStatus('error', 'Введите код контракта');
+                return;
+            }
+            
+            updateStatus('info', 'Подготовка транзакции деплоя...');
+            
+            try {
+                // Здесь нужно использовать реальные параметры контракта
+                // Пока это упрощенный пример
+                updateStatus('error', 'Полный деплой через TonConnect требует дополнительной реализации. Используйте Python скрипт для автоматического деплоя.');
+            } catch (error) {
+                updateStatus('error', `Ошибка: ${error.message}`);
+            }
+        });
+        
+        function updateStatus(type, message) {
+            const statusEl = document.getElementById('tonconnect-status');
+            statusEl.className = `status ${type}`;
+            statusEl.textContent = message;
+            
+            const resultEl = document.getElementById('result');
+            resultEl.style.display = 'block';
+            resultEl.className = `status ${type}`;
+            resultEl.textContent = message;
+        }
+    </script>
+</body>
+</html>
+
