@@ -104,7 +104,8 @@ def build_deal_init_data_cell(params: Dict[str, Any]) -> Cell:
             - service_wallet: str - адрес сервисного кошелька
             - arbiter_wallet: str - адрес арбитра
             - item_price_ton: Decimal - цена товара в TON
-            - buyer_fee_ton: Decimal - комиссия байера в TON
+            - buyer_fee_ton: Decimal - вознаграждение байера в TON
+            - shipping_budget_ton: Decimal - бюджет на доставку в TON (опционально, по умолчанию 0)
             - service_fee_ton: Decimal - комиссия сервиса в TON
             - insurance_ton: Decimal - страховка в TON
             - purchase_deadline_ts: int - timestamp дедлайна покупки
@@ -134,6 +135,8 @@ def build_deal_init_data_cell(params: Dict[str, Any]) -> Cell:
         # Конвертируем суммы в nanoTON
         item_price_nano = convert_ton_to_nano(Decimal(str(params['item_price_ton'])))
         buyer_fee_nano = convert_ton_to_nano(Decimal(str(params['buyer_fee_ton'])))
+        # shipping_budget_ton может отсутствовать в старых данных, используем 0 по умолчанию
+        shipping_budget_nano = convert_ton_to_nano(Decimal(str(params.get('shipping_budget_ton', '0'))))
         service_fee_nano = convert_ton_to_nano(Decimal(str(params['service_fee_ton'])))
         insurance_nano = convert_ton_to_nano(Decimal(str(params['insurance_ton'])))
         
@@ -160,39 +163,63 @@ def build_deal_init_data_cell(params: Dict[str, Any]) -> Cell:
         metadata_hash_uint256 = int.from_bytes(metadata_hash, byteorder='big')
         
         # Собираем init data cell
-        # Структура соответствует init() функции контракта Deal_simple.tact:
-        # init(customer, buyer, serviceWallet, arbiter, itemPriceNano, buyerFeeNano,
-        #      serviceFeeNano, insuranceNano, purchaseDeadline, shipDeadline, 
-        #      confirmDeadline, metadataHash)
+        # Структура точно соответствует тому, как Tact упаковывает данные (см. initDeal_init_args):
         #
-        # Порядок полей в Cell:
-        # 1. customer: Address
-        # 2. buyer: Address
-        # 3. serviceWallet: Address
-        # 4. arbiter: Address
-        # 5. itemPriceNano: Coins
-        # 6. buyerFeeNano: Coins
-        # 7. serviceFeeNano: Coins
-        # 8. insuranceNano: Coins
-        # 9. purchaseDeadline: UInt64
-        # 10. shipDeadline: UInt64
-        # 11. confirmDeadline: UInt64
-        # 12. metadataHash: UInt256 (32 bytes hash как число)
+        # Основной Cell (b_0):
+        #   - storeUint(0, 1) - первый бит (флаг Deployable)
+        #   - storeAddress(customer)
+        #   - storeAddress(buyer)
+        #   - storeAddress(serviceWallet)
+        #   - storeRef(b_1) - ссылка на первую часть
+        #
+        # Первая ссылка (b_1):
+        #   - storeAddress(arbiter)
+        #   - storeCoins(itemPriceNano)
+        #   - storeCoins(buyerFeeNano)
+        #   - storeCoins(shippingBudgetNano)
+        #   - storeCoins(serviceFeeNano)
+        #   - storeCoins(insuranceNano)
+        #   - storeUint(purchaseDeadline, 64)
+        #   - storeUint(shipDeadline, 64)
+        #   - storeRef(b_2) - ссылка на вторую часть
+        #
+        # Вторая ссылка (b_2):
+        #   - storeUint(confirmDeadline, 64)
+        #   - storeUint(metadataHash, 256)
         
-        init_data = begin_cell()\
-            .store_address(customer_addr)\
-            .store_address(buyer_addr)\
-            .store_address(service_addr)\
-            .store_address(arbiter_addr)\
-            .store_coins(item_price_nano)\
-            .store_coins(buyer_fee_nano)\
-            .store_coins(service_fee_nano)\
-            .store_coins(insurance_nano)\
-            .store_uint(purchase_deadline, 64)\
-            .store_uint(ship_deadline, 64)\
-            .store_uint(confirm_deadline, 64)\
-            .store_uint(metadata_hash_uint256, 256)\
+        # Вторая ссылка (b_2): confirmDeadline + metadataHash
+        b_2 = (
+            begin_cell()
+            .store_uint(confirm_deadline, 64)
+            .store_uint(metadata_hash_uint256, 256)
             .end_cell()
+        )
+        
+        # Первая ссылка (b_1): arbiter + все суммы + дедлайны + ссылка на b_2
+        b_1 = (
+            begin_cell()
+            .store_address(arbiter_addr)
+            .store_coins(item_price_nano)
+            .store_coins(buyer_fee_nano)
+            .store_coins(shipping_budget_nano)
+            .store_coins(service_fee_nano)
+            .store_coins(insurance_nano)
+            .store_uint(purchase_deadline, 64)
+            .store_uint(ship_deadline, 64)
+            .store_ref(b_2)
+            .end_cell()
+        )
+        
+        # Основной Cell (b_0): флаг + первые 3 адреса + ссылка на b_1
+        init_data = (
+            begin_cell()
+            .store_uint(0, 1)  # Флаг Deployable (0 = not special)
+            .store_address(customer_addr)
+            .store_address(buyer_addr)
+            .store_address(service_addr)
+            .store_ref(b_1)
+            .end_cell()
+        )
         
         logger.info("Deal init data cell built successfully")
         return init_data
@@ -220,16 +247,48 @@ def calculate_contract_address(code_cell: Cell, init_data_cell: Cell, workchain:
         raise ImportError("tonsdk is required for contract operations")
     
     try:
-        from tonsdk.contract.wallet import Wallets, WalletVersionEnum
+        from tonsdk.boc import begin_cell
+        from tonsdk.utils import Address
+        import hashlib
         
-        # Используем метод генерации адреса из кошелька (он умеет считать адрес по state_init)
-        # Это временный кошелек только для вычисления адреса
-        temp_wallet = Wallets.from_private_key([0] * 32, WalletVersionEnum.v4r2, 0)
-        address_cell = temp_wallet.address.generate_state_init_address(
-            code_cell, init_data_cell
+        # Собираем state_init согласно структуре TON (как в ton_wallet.py):
+        # split_depth: None, special: None, code: Some, data: Some, library: None
+        state_init = (
+            begin_cell()
+            .store_bit(0)  # split_depth = None
+            .store_bit(0)  # special = None
+            .store_bit(1)  # code = Some
+            .store_ref(code_cell)
+            .store_bit(1)  # data = Some
+            .store_ref(init_data_cell)
+            .store_bit(0)  # library = None
+            .end_cell()
         )
-        return address_cell.to_string(True, True, True)
+        
+        # Вычисляем hash state_init для адреса контракта
+        # В TON адрес контракта вычисляется как hash от state_init
+        # Алгоритм: берем state_init, вычисляем hash, создаем адрес
+        
+        # Получаем hash representation state_init
+        state_init_boc = state_init.to_boc(False)  # False = без index
+        
+        # Вычисляем hash_part (первые 32 байта SHA256)
+        hash_part = hashlib.sha256(state_init_boc).digest()
+        
+        # Создаем адрес: workchain (int) + hash_part (bytes)
+        # Address принимает либо строку формата "workchain:hash_hex", либо workchain и hash_part отдельно
+        # Попробуем создать через конструктор с workchain и hash_part
+        try:
+            # Формат: Address(workchain, hash_part_bytes)
+            contract_address_obj = Address(workchain, hash_part)
+            contract_address = contract_address_obj.to_string(True, True, True)
+        except (TypeError, ValueError):
+            # Fallback: используем строковый формат
+            address_str = f"{workchain}:{hash_part.hex()}"
+            contract_address = Address(address_str).to_string(True, True, True)
+        
+        return contract_address
     except Exception as e:
-        logger.error(f"Failed to calculate contract address: {e}")
+        logger.error(f"Failed to calculate contract address: {e}", exc_info=True)
         raise
 

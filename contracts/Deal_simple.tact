@@ -19,6 +19,7 @@ struct DealData {
     arbiter: Address;
     itemPriceNano: Int as coins;
     buyerFeeNano: Int as coins;
+    shippingBudgetNano: Int as coins; // Бюджет на доставку (максимальная сумма для actual_shipping_cost)
     serviceFeeNano: Int as coins;
     insuranceNano: Int as coins;
     purchaseDeadline: Int as uint64;
@@ -39,6 +40,7 @@ contract Deal with Deployable {
         arbiter: Address,
         itemPriceNano: Int as coins,
         buyerFeeNano: Int as coins,
+        shippingBudgetNano: Int as coins,
         serviceFeeNano: Int as coins,
         insuranceNano: Int as coins,
         purchaseDeadline: Int as uint64,
@@ -53,6 +55,7 @@ contract Deal with Deployable {
             arbiter: arbiter,
             itemPriceNano: itemPriceNano,
             buyerFeeNano: buyerFeeNano,
+            shippingBudgetNano: shippingBudgetNano,
             serviceFeeNano: serviceFeeNano,
             insuranceNano: insuranceNano,
             purchaseDeadline: purchaseDeadline,
@@ -89,9 +92,12 @@ contract Deal with Deployable {
         self.data.status = 4; // COMPLETED
         
         // Распределяем средства
+        // Выплата байеру: itemPrice + shippingBudget (максимум) + buyerFee
+        // Примечание: actual_shipping_cost может быть меньше shippingBudget,
+        // но в escrow зарезервирован максимум (shippingBudget)
         send(SendParameters{
             to: self.data.buyer,
-            value: self.data.itemPriceNano + self.data.buyerFeeNano,
+            value: self.data.itemPriceNano + self.data.shippingBudgetNano + self.data.buyerFeeNano,
             mode: SendRemainingValue,
             bounce: false
         });
@@ -120,8 +126,8 @@ contract Deal with Deployable {
         
         self.data.status = 5; // CANCELLED_REFUND_CUSTOMER
         
-        let totalAmount: Int = self.data.itemPriceNano + self.data.buyerFeeNano + 
-                               self.data.serviceFeeNano + self.data.insuranceNano;
+        let totalAmount: Int = self.data.itemPriceNano + self.data.shippingBudgetNano + 
+                               self.data.buyerFeeNano + self.data.serviceFeeNano + self.data.insuranceNano;
         
         send(SendParameters{
             to: self.data.customer,
@@ -138,8 +144,8 @@ contract Deal with Deployable {
         
         self.data.status = 5; // CANCELLED_REFUND_CUSTOMER
         
-        let totalAmount: Int = self.data.itemPriceNano + self.data.buyerFeeNano + 
-                               self.data.serviceFeeNano + self.data.insuranceNano;
+        let totalAmount: Int = self.data.itemPriceNano + self.data.shippingBudgetNano + 
+                               self.data.buyerFeeNano + self.data.serviceFeeNano + self.data.insuranceNano;
         
         send(SendParameters{
             to: self.data.customer,
@@ -161,7 +167,7 @@ contract Deal with Deployable {
         
         send(SendParameters{
             to: self.data.buyer,
-            value: self.data.itemPriceNano + self.data.buyerFeeNano,
+            value: self.data.itemPriceNano + self.data.shippingBudgetNano + self.data.buyerFeeNano,
             mode: SendRemainingValue,
             bounce: false
         });
@@ -190,8 +196,8 @@ contract Deal with Deployable {
         
         self.data.status = 5; // CANCELLED_REFUND_CUSTOMER
         
-        let totalAmount: Int = self.data.itemPriceNano + self.data.buyerFeeNano + 
-                               self.data.serviceFeeNano + self.data.insuranceNano;
+        let totalAmount: Int = self.data.itemPriceNano + self.data.shippingBudgetNano + 
+                               self.data.buyerFeeNano + self.data.serviceFeeNano + self.data.insuranceNano;
         
         send(SendParameters{
             to: self.data.customer,
@@ -210,7 +216,7 @@ contract Deal with Deployable {
         
         send(SendParameters{
             to: self.data.buyer,
-            value: self.data.itemPriceNano + self.data.buyerFeeNano,
+            value: self.data.itemPriceNano + self.data.shippingBudgetNano + self.data.buyerFeeNano,
             mode: SendRemainingValue,
             bounce: false
         });
@@ -230,7 +236,7 @@ contract Deal with Deployable {
         
         self.data.status = 4; // COMPLETED
         
-        let halfAmount: Int = (self.data.itemPriceNano + self.data.buyerFeeNano) / 2;
+        let halfAmount: Int = (self.data.itemPriceNano + self.data.shippingBudgetNano + self.data.buyerFeeNano) / 2;
         
         send(SendParameters{
             to: self.data.customer,

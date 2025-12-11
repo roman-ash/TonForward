@@ -5,6 +5,7 @@ Celery tasks for core app.
 from celery import shared_task
 from django.utils import timezone
 from django.db import transaction
+from decimal import Decimal
 import logging
 
 from core.models import Deal, OnchainDeal, Payment
@@ -284,6 +285,9 @@ def deploy_onchain_deal(deal_id: int) -> dict:
         }
         metadata_hash = calculate_metadata_hash(deal_data)
 
+        # Получаем shipping_budget_ton (должен быть заполнен при создании Deal)
+        shipping_budget_ton = deal.shipping_budget_ton or Decimal('0')
+        
         params = DealOnchainParams(
             customer_address=customer_ton_address,
             buyer_address=buyer_ton_address,
@@ -291,6 +295,7 @@ def deploy_onchain_deal(deal_id: int) -> dict:
             arbiter_wallet=arbiter_wallet,
             item_price_nano=convert_ton_to_nano(deal.item_price_ton),
             buyer_fee_nano=convert_ton_to_nano(deal.buyer_fee_ton),
+            shipping_budget_nano=convert_ton_to_nano(shipping_budget_ton),
             service_fee_nano=convert_ton_to_nano(deal.service_fee_ton),
             insurance_nano=convert_ton_to_nano(deal.insurance_ton),
             purchase_deadline_ts=int(deal.purchase_deadline.timestamp()),
